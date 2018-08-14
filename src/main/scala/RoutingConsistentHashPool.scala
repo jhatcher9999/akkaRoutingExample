@@ -6,7 +6,7 @@ case class WorkItem(sourceSystemName: Option[String], sourceSystemId: Option[Str
   override def consistentHashKey: Any = sourceSystemName.getOrElse("") + "|" + sourceSystemId.getOrElse("")
 }
 
-class RoutingConsistentHashPool() extends Actor {
+class WorkerActor() extends Actor {
   def receive: PartialFunction[Any, Unit] = {
     case workItem: WorkItem =>
       println("Routee: processing " + workItem.consistentHashKey + " by routee " + this.self.path)
@@ -15,10 +15,7 @@ class RoutingConsistentHashPool() extends Actor {
   }
 }
 
-object RoutingConsistentHashPoolTest extends App {
-
-  val actorSystem = ActorSystem("RoutingConsistentHashPoolSystem")
-
+object WorkItemHelper {
   val workItems = Array(
     WorkItem(Some("AAA"), Some("111")),
     WorkItem(Some("BBB"), Some("222")),
@@ -32,59 +29,68 @@ object RoutingConsistentHashPoolTest extends App {
     WorkItem(Some("JJJ"), Some("1000")),
     WorkItem(Some("KKK"), None)
   )
+}
 
-  //as an alternative to adding a consistentHashKey method to WorkItem, you could create a method here and pass it to the router
-  //  def hashMapping: ConsistentHashMapping = {
-  //    case workItem: WorkItem => workItem.sourceSystemName.getOrElse("") + "|" + workItem.sourceSystemId.getOrElse("")
-  //  }
-  //
-  //  val router = actorSystem.actorOf(
-  //    ConsistentHashingPool(
-  //      nrOfInstances = 5,
-  //      virtualNodesFactor = 5,
-  //      hashMapping = hashMapping
-  //    ).props(Props(new RoutingConsistentHashPool())),
-  //    name = "routerMapping"
-  //  )
+object RoutingConsistentHashPoolTest extends App {
+
+  val actorSystem = ActorSystem("RoutingConsistentHashPoolSystem")
 
   ////// POOL ROUTER
+  //in the pool router, we let the router control the routees
 
   println("Processing work items with Pool Router")
 
-  val router = actorSystem.actorOf(
+  val poolRouter = actorSystem.actorOf(
     ConsistentHashingPool(
       nrOfInstances = 5
-    ).props(Props(new RoutingConsistentHashPool())),
+    ).props(Props(new WorkerActor())),
     name = "routerMapping"
   )
 
-  workItems.foreach {
-    workItem => router ! workItem
+  //process the work items
+  WorkItemHelper.workItems.foreach {
+    workItem => poolRouter ! workItem
+  }
+  //process them again to see that work items were processed by consistent routees
+  WorkItemHelper.workItems.foreach {
+    workItem => poolRouter ! workItem
   }
 
-  println
+  //actorSystem.terminate()
+
+}
+
+object RoutingConsistentHashGroupTest extends App {
+
+  val actorSystem = ActorSystem("RoutingConsistentHashGroupSystem")
 
   ////// GROUP ROUTER
+  //in the group router, we control the routees outside of the router
 
   println("Processing work items with Group Router")
 
   val routees = Seq(
-    actorSystem.actorOf(Props(new RoutingConsistentHashPool())),
-    actorSystem.actorOf(Props(new RoutingConsistentHashPool())),
-    actorSystem.actorOf(Props(new RoutingConsistentHashPool())),
-    actorSystem.actorOf(Props(new RoutingConsistentHashPool())),
-    actorSystem.actorOf(Props(new RoutingConsistentHashPool()))
+    actorSystem.actorOf(Props(new WorkerActor())),
+    actorSystem.actorOf(Props(new WorkerActor())),
+    actorSystem.actorOf(Props(new WorkerActor())),
+    actorSystem.actorOf(Props(new WorkerActor())),
+    actorSystem.actorOf(Props(new WorkerActor()))
   )
 
   val paths = routees.map(routee => routee.path.toSerializationFormat).toList
 
-  val router2 = actorSystem.actorOf(
+  val groupRouter = actorSystem.actorOf(
     ConsistentHashingGroup(paths).props(),
     name = "routerMapping2"
   )
 
-  workItems.foreach {
-    workItem => router2 ! workItem
+  //process the work items
+  WorkItemHelper.workItems.foreach {
+    workItem => groupRouter ! workItem
+  }
+  //process them again to see that work items were processed by consistent routees
+  WorkItemHelper.workItems.foreach {
+    workItem => groupRouter ! workItem
   }
 
   //actorSystem.terminate()
