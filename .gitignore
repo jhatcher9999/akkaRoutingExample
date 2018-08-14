@@ -1,1 +1,6 @@
 # Created by .ignore support plugin (hsz.mobi)
+.idea/vcs.xml
+project/target/streams/compile/compileIncSetup/
+src/test/
+target
+.idea
